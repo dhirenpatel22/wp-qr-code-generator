@@ -117,7 +117,8 @@
 	transition: background-color 0.3s;
 }
 
-.qr-form-fields input[type="submit"]:hover {
+/* Scoped to the container so theme button colours can't leave navy text on the navy hover. */
+.qr-generator-container .qr-form-fields input[type="submit"]:hover {
 	background-color: #0d1267;
 	color: white;
 	border: none;
