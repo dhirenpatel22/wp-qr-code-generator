@@ -1,0 +1,5 @@
+* text=auto eol=lf
+
+# Keep repository-only files out of release archives
+.gitattributes export-ignore
+.gitignore export-ignore
