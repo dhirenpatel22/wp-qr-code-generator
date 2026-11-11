@@ -1,0 +1,14 @@
+{
+    "name": "dhirenpatel22/wp-qr-code-generator",
+    "description": "WordPress QR code generator plugin.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "require": {
+        "php": ">=8.2",
+        "chillerlan/php-qrcode": "6.0.1"
+    },
+    "config": {
+        "platform": { "php": "8.2.0" },
+        "optimize-autoloader": true
+    }
+}

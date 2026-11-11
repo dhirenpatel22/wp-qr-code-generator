@@ -7,5 +7,3 @@ Thumbs.db
 # Logs
 *.log
 
-# Generated QR images (runtime)
-/generated/

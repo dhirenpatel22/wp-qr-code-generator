@@ -3,10 +3,12 @@
  * Plugin Name: QR Code Generator
  * Plugin URI: https://www.dhirenpatel.me/
  * Description: A simple QR code generator with customization and shortcode support.
- * Version: 1.4
+ * Version: 2.0
+ * Requires PHP: 8.2
  * Author: Dhiren Patel
  * Author URI: https://www.dhirenpatel.me/
- * License: GPL2
+ * License: GPL-2.0-or-later
+ * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: qr-code-generator
  */
 
@@ -15,96 +17,67 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-// Include the QR code library.
-require_once plugin_dir_path( __FILE__ ) . 'phpqrcode/qrlib.php';
+// QR code library: chillerlan/php-qrcode, installed with Composer into vendor/.
+require_once plugin_dir_path( __FILE__ ) . 'vendor/autoload.php';
+
+use chillerlan\QRCode\QRCode;
+use chillerlan\QRCode\QROptions;
+use chillerlan\QRCode\Common\EccLevel;
+use chillerlan\QRCode\Output\QRGdImagePNG;
+use chillerlan\QRCode\Output\QROutputInterface;
 
 /**
- * Add text overlay to a QR code image.
+ * Generate a QR code PNG in memory and return it as a data URI. Nothing is written to disk.
  *
- * @param string $image_path Path to the QR code image.
- * @param string $text Text to overlay.
- * @param int $size Size of the QR code.
- * @param int $background_color Background color in hex format.
- * @return bool True on success, false on failure.
+ * @since 2.0
+ * @param string $content Text to encode.
+ * @param int[]  $fore    Foreground colour as [ r, g, b ].
+ * @param int[]  $back    Background colour as [ r, g, b ].
+ * @param int    $size    Requested size in pixels; the image is capped at 1024 pixels.
+ * @return string data:image/png;base64,... URI.
+ * @throws \chillerlan\QRCode\QRCodeException If the content is too long to encode.
  */
-function qr_add_text_overlay( $image_path, $text, $size, $background_color = 0xFFFFFF ) {
-	$image = imagecreatefrompng( $image_path );
-	if ( ! $image ) {
-		return false;
+function qr_generator_png_data_uri( $content, $fore, $back, $size ) {
+	$module_values = array();
+	foreach ( QROutputInterface::DEFAULT_MODULE_VALUES as $type => $is_dark ) {
+		$module_values[ $type ] = $is_dark ? $fore : $back;
 	}
 
-	// Use smaller built-in font
-	$font_size = 3; // Smaller font size (1-5, where 1 is smallest)
-	
-	// Determine text color based on background color brightness
-	$text_color = qr_get_contrasting_color( $image, $background_color );
-	
-	// Calculate text position to center it at the bottom
-	$image_width = imagesx( $image );
-	$image_height = imagesy( $image );
-	
-	// Get text dimensions using built-in font
-	$text_width = strlen( $text ) * imagefontwidth( $font_size );
-	$text_height = imagefontheight( $font_size );
-	
-	// Position text at the bottom center with some padding
-	$x = ( $image_width - $text_width ) / 2;
-	$y = $image_height - $text_height - 1; // 1px from bottom (moved closer to bottom)
-	
-	// Add text to the image
-	imagestring( $image, $font_size, $x, $y, $text, $text_color );
-	
-	// Save the image with the overlay
-	imagepng( $image, $image_path );
-	imagedestroy( $image );
-	
-	return true;
+	$options = new QROptions(
+		array(
+			'eccLevel'        => EccLevel::L,
+			'quietzoneSize'   => 2,
+			'outputInterface' => QRGdImagePNG::class,
+			'outputBase64'    => true,
+			'bgColor'         => $back,
+			'moduleValues'    => $module_values,
+		)
+	);
+
+	$qrcode = new QRCode( $options );
+	$qrcode->addByteSegment( $content );
+	$matrix = $qrcode->getQRMatrix();
+
+	// Pixels per module: size / 25 with a minimum of 4, reduced so the image stays within 1024 pixels.
+	$options->scale = min( max( 4, intdiv( $size, 25 ) ), max( 1, intdiv( 1024, $matrix->getSize() ) ) );
+
+	return $qrcode->renderMatrix( $matrix );
 }
 
 /**
- * Get contrasting color (black or white) based on background color brightness.
+ * Convert a #rrggbb colour to [ r, g, b ], with a fallback for invalid input.
  *
- * @param resource $image Image resource.
- * @param int $background_color Background color in hex format.
- * @return int Color resource for contrasting text color.
+ * @since 2.0
+ * @param string|null $hex      Colour from sanitize_hex_color().
+ * @param int[]       $fallback Colour to use when $hex is empty.
+ * @return int[]
  */
-function qr_get_contrasting_color( $image, $background_color ) {
-	// Extract RGB components
-	$r = ( $background_color >> 16 ) & 0xFF;
-	$g = ( $background_color >> 8 ) & 0xFF;
-	$b = $background_color & 0xFF;
-	
-	// Calculate brightness using luminance formula
-	$brightness = ( $r * 0.299 ) + ( $g * 0.587 ) + ( $b * 0.114 );
-	
-	// Return black for light backgrounds, white for dark backgrounds
-	if ( $brightness > 128 ) {
-		return imagecolorallocate( $image, 0, 0, 0 ); // Black
-	} else {
-		return imagecolorallocate( $image, 255, 255, 255 ); // White
+function qr_generator_hex_to_rgb( $hex, $fallback ) {
+	if ( ! is_string( $hex ) || 7 !== strlen( $hex ) ) {
+		return $fallback;
 	}
+	return array_map( 'hexdec', str_split( substr( $hex, 1 ), 2 ) );
 }
-
-/**
- * Handle QR code download and deletion.
- *
- * @since 1.2
- */
-function qr_generator_handle_download() {
-	if ( isset( $_GET['qr_download'] ) && isset( $_GET['nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_GET['nonce'] ) ), 'qr_download_nonce_action' ) ) {
-		$filename  = sanitize_file_name( wp_unslash( $_GET['qr_download'] ) );
-		$file_path = plugin_dir_path( __FILE__ ) . 'generated/' . $filename;
-
-		if ( file_exists( $file_path ) ) {
-			header( 'Content-Type: image/png' );
-			header( 'Content-Disposition: attachment; filename="' . $filename . '"' );
-			readfile( $file_path );
-			unlink( $file_path ); // Delete after serving.
-			exit;
-		}
-	}
-}
-add_action( 'init', 'qr_generator_handle_download' );
 
 /**
  * QR code generator shortcode callback.
@@ -116,86 +89,51 @@ add_action( 'init', 'qr_generator_handle_download' );
  */
 function qr_generator_shortcode() {
 	// Enqueue styles only when shortcode is rendered
-	wp_enqueue_style( 'qr-generator-style', plugin_dir_url( __FILE__ ) . 'style.css', array(), '1.2' );
+	wp_enqueue_style( 'qr-generator-style', plugin_dir_url( __FILE__ ) . 'style.css', array(), '2.0' );
 
 	ob_start();
 
-	$generation_error = '';
-
-	// Cleanup old files (older than 5 minutes).
-	$generated_dir = plugin_dir_path( __FILE__ ) . 'generated/';
-	if ( file_exists( $generated_dir ) ) {
-		foreach ( glob( $generated_dir . 'qr-*.png' ) as $file ) {
-			if ( time() - filemtime( $file ) > 300 ) { // 5 minutes.
-				unlink( $file );
-			}
-		}
-	}
-
 	// Handle form submission.
-	if ( isset( $_POST['generate_qr'] ) && isset( $_POST['qr_generator_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['qr_generator_nonce'] ) ), 'qr_generator_nonce_action' ) ) {
-		$data            = sanitize_text_field( wp_unslash( $_POST['qr_data'] ) );
-		$type            = sanitize_text_field( wp_unslash( $_POST['qr_type'] ) );
-		$fore_color_hex  = sanitize_hex_color( wp_unslash( $_POST['qr_color'] ) );
-		$back_color_hex  = sanitize_hex_color( wp_unslash( $_POST['qr_bg_color'] ) );
-		$size            = intval( wp_unslash( $_POST['qr_size'] ) );
-
-		// Convert hex to integer for library (e.g., 0xRRGGBB).
-		$fore_color = hexdec( substr( $fore_color_hex, 1 ) );
-		$back_color = hexdec( substr( $back_color_hex, 1 ) );
+	if ( isset( $_POST['generate_qr'], $_POST['qr_generator_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['qr_generator_nonce'] ) ), 'qr_generator_nonce_action' ) ) {
+		$data = isset( $_POST['qr_data'] ) ? sanitize_text_field( wp_unslash( $_POST['qr_data'] ) ) : '';
+		$type = isset( $_POST['qr_type'] ) ? sanitize_text_field( wp_unslash( $_POST['qr_type'] ) ) : 'text';
+		$fore = qr_generator_hex_to_rgb( isset( $_POST['qr_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['qr_color'] ) ) : null, array( 0, 0, 0 ) );
+		$back = qr_generator_hex_to_rgb( isset( $_POST['qr_bg_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['qr_bg_color'] ) ) : null, array( 255, 255, 255 ) );
+		$size = isset( $_POST['qr_size'] ) ? min( 1200, max( 100, intval( wp_unslash( $_POST['qr_size'] ) ) ) ) : 400;
 
 		// Prepare data based on type.
 		switch ( $type ) {
-			case 'url':
-				$qr_content = $data;
-				break;
 			case 'vcard':
 				$qr_content = "BEGIN:VCARD\nVERSION:3.0\nFN:$data\nEND:VCARD";
 				break;
+			case 'url':
 			case 'text':
 			default:
 				$qr_content = $data;
 				break;
 		}
 
-		// Generate QR code with colors.
-		$overlay_text = '';
-		$unique_hash = md5( $qr_content . $fore_color_hex . $back_color_hex . $size . $overlay_text );
-		$filename    = 'qr-' . $unique_hash . '.png';
-		$file_path   = $generated_dir . $filename;
-
-		if ( ! file_exists( $generated_dir ) ) {
-			if ( ! wp_mkdir_p( $generated_dir ) ) {
-				$generation_error = __( 'Failed to create generated directory. Check server permissions.', 'qr-code-generator' );
+		$image_uri = '';
+		if ( '' !== $data ) {
+			try {
+				$image_uri = qr_generator_png_data_uri( $qr_content, $fore, $back, $size );
+			} catch ( \Throwable $e ) {
+				$image_uri = '';
 			}
 		}
 
-		if ( empty( $generation_error ) ) {
-			$module_size = max( 4, intval( $size / 25 ) ); // Ensure a minimum module size for visibility.
-			QRcode::png( $qr_content, $file_path, QR_ECLEVEL_L, $module_size, 2, false, $back_color, $fore_color );
-			
-			// Add fixed text overlay to every QR code
-			qr_add_text_overlay( $file_path, $overlay_text, $size, $back_color );
-		}
-
-		if ( empty( $generation_error ) && file_exists( $file_path ) ) {
-			// Output preview and download with cache-busting and nonce.
-			$image_url    = plugin_dir_url( __FILE__ ) . 'generated/' . $filename . '?v=' . time();
-			$download_url = add_query_arg(
-				array(
-					'qr_download' => $filename,
-					'nonce'       => wp_create_nonce( 'qr_download_nonce_action' ),
-				),
-				home_url()
-			);
+		if ( 0 === strpos( $image_uri, 'data:image/png;base64,' ) ) {
+			// The image is a data URI built above (base64 only), so it is escaped as an attribute; esc_url() would drop the data: scheme.
 			$qr_output = '
 			<div class="qr-output">
-				<img src="' . esc_url( $image_url ) . '" alt="' . esc_attr__( 'Generated QR Code', 'qr-code-generator' ) . '" class="qr-preview">
-				<a href="' . esc_url( $download_url ) . '" class="qr-download">' . esc_html__( 'Download QR Code', 'qr-code-generator' ) . '</a>
+				<img src="' . esc_attr( $image_uri ) . '" alt="' . esc_attr__( 'Generated QR Code', 'qr-code-generator' ) . '" class="qr-preview">
+				<a href="' . esc_attr( $image_uri ) . '" download="qr-code.png" class="qr-download">' . esc_html__( 'Download QR Code', 'qr-code-generator' ) . '</a>
 			</div>';
 		} else {
-			$generation_error = $generation_error ?: __( 'Failed to generate QR code. Ensure GD library is enabled and the library is correctly installed.', 'qr-code-generator' );
-			$qr_output = '<p class="qr-error">' . esc_html( $generation_error ) . '</p>';
+			$generation_error = '' === $data
+				? __( 'Enter the data to encode.', 'qr-code-generator' )
+				: __( 'Could not generate the QR code. The data may be too long: try shorter text.', 'qr-code-generator' );
+			$qr_output        = '<p class="qr-error">' . esc_html( $generation_error ) . '</p>';
 		}
 	}
 
