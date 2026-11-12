@@ -3,7 +3,7 @@
  * Plugin Name: QR Code Generator
  * Plugin URI: https://www.dhirenpatel.me/
  * Description: A simple QR code generator with customization and shortcode support.
- * Version: 2.0.2
+ * Version: 2.0.3
  * Requires PHP: 8.2
  * Author: Dhiren Patel
  * Author URI: https://www.dhirenpatel.me/
@@ -101,7 +101,7 @@ function qr_generator_hex_to_rgb( $hex, $fallback ) {
  */
 function qr_generator_shortcode() {
 	// Enqueue styles only when shortcode is rendered
-	wp_enqueue_style( 'qr-generator-style', plugin_dir_url( __FILE__ ) . 'style.css', array(), '2.0.2' );
+	wp_enqueue_style( 'qr-generator-style', plugin_dir_url( __FILE__ ) . 'style.css', array(), '2.0.3' );
 
 	ob_start();
 

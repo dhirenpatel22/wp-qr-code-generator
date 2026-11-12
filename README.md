@@ -51,6 +51,7 @@ The plugin is GPL-2.0-or-later. See [LICENSE](LICENSE).
 
 ## Changelog
 
+- **2.0.3**: the Download button's text is navy on orange at rest (5.9:1, was white at 2.74:1) and white on navy on hover (16.2:1), with a navy focus ring for keyboard users.
 - **2.0.2**: the size field and the server limit are 1024 pixels, matching the stated maximum, and the PNG is exactly the size requested (400 gives 400 pixels); the URL type warns when the text is not a web address.
 - **2.0**: replaced the unmaintained PHP QR Code 1.1.4 library with chillerlan/php-qrcode 6.0.1; QR codes are generated in memory instead of saved to a public folder; size is checked on the server; licence is now GPL-2.0-or-later; requires PHP 8.2.
 - **1.4**: version running on dhirenpatel.me when this repository was created.

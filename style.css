@@ -138,7 +138,7 @@
 	margin-top: 10px;
 	padding: 10px 20px;
 	background-color: #fb743e;
-	color: white !important;
+	color: #0d1267 !important; /* 5.9:1 on the orange; white was 2.74:1 */
 	font-size: 16px;
 	line-height: 22px;
 	font-weight: 600 !important;
@@ -149,8 +149,13 @@
 
 .qr-download:hover {
 	background-color: #0d1267;
-	color: white;
+	color: white !important; /* 16.2:1; !important to beat the resting colour above */
 	border: none;
+}
+
+.qr-download:focus-visible {
+	outline: 2px solid #0d1267;
+	outline-offset: 2px;
 }
 
 .qr-output {
