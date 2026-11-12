@@ -3,7 +3,7 @@
  * Plugin Name: QR Code Generator
  * Plugin URI: https://www.dhirenpatel.me/
  * Description: A simple QR code generator with customization and shortcode support.
- * Version: 2.0.1
+ * Version: 2.0.2
  * Requires PHP: 8.2
  * Author: Dhiren Patel
  * Author URI: https://www.dhirenpatel.me/
@@ -33,7 +33,8 @@ use chillerlan\QRCode\Output\QROutputInterface;
  * @param string $content Text to encode.
  * @param int[]  $fore    Foreground colour as [ r, g, b ].
  * @param int[]  $back    Background colour as [ r, g, b ].
- * @param int    $size    Requested size in pixels; the image is capped at 1024 pixels.
+ * @param int    $size    Image width and height in pixels (100 to 1024). Only very long content at a small
+ *                        size gives a larger image, because each module needs at least one pixel.
  * @return string data:image/png;base64,... URI.
  * @throws \chillerlan\QRCode\QRCodeException If the content is too long to encode.
  */
@@ -48,7 +49,7 @@ function qr_generator_png_data_uri( $content, $fore, $back, $size ) {
 			'eccLevel'        => EccLevel::L,
 			'quietzoneSize'   => 2,
 			'outputInterface' => QRGdImagePNG::class,
-			'outputBase64'    => true,
+			'returnResource'  => true,
 			'bgColor'         => $back,
 			'moduleValues'    => $module_values,
 		)
@@ -58,10 +59,21 @@ function qr_generator_png_data_uri( $content, $fore, $back, $size ) {
 	$qrcode->addByteSegment( $content );
 	$matrix = $qrcode->getQRMatrix();
 
-	// Pixels per module: size / 25 with a minimum of 4, reduced so the image stays within 1024 pixels.
-	$options->scale = min( max( 4, intdiv( $size, 25 ) ), max( 1, intdiv( 1024, $matrix->getSize() ) ) );
+	// Whole pixels per module keep the code sharp; the remainder becomes extra background around it,
+	// so the image is exactly $size pixels.
+	$options->scale = max( 1, intdiv( $size, $matrix->getSize() ) );
+	$code           = $qrcode->renderMatrix( $matrix );
+	$code_length    = imagesx( $code );
+	$length         = max( $size, $code_length );
 
-	return $qrcode->renderMatrix( $matrix );
+	$image = imagecreatetruecolor( $length, $length );
+	imagefill( $image, 0, 0, imagecolorallocate( $image, $back[0], $back[1], $back[2] ) );
+	$offset = intdiv( $length - $code_length, 2 );
+	imagecopy( $image, $code, $offset, $offset, 0, 0, $code_length, $code_length );
+
+	ob_start();
+	imagepng( $image );
+	return 'data:image/png;base64,' . base64_encode( ob_get_clean() );
 }
 
 /**
@@ -89,7 +101,7 @@ function qr_generator_hex_to_rgb( $hex, $fallback ) {
  */
 function qr_generator_shortcode() {
 	// Enqueue styles only when shortcode is rendered
-	wp_enqueue_style( 'qr-generator-style', plugin_dir_url( __FILE__ ) . 'style.css', array(), '2.0.1' );
+	wp_enqueue_style( 'qr-generator-style', plugin_dir_url( __FILE__ ) . 'style.css', array(), '2.0.2' );
 
 	ob_start();
 
@@ -99,7 +111,7 @@ function qr_generator_shortcode() {
 		$type = isset( $_POST['qr_type'] ) ? sanitize_text_field( wp_unslash( $_POST['qr_type'] ) ) : 'text';
 		$fore = qr_generator_hex_to_rgb( isset( $_POST['qr_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['qr_color'] ) ) : null, array( 0, 0, 0 ) );
 		$back = qr_generator_hex_to_rgb( isset( $_POST['qr_bg_color'] ) ? sanitize_hex_color( wp_unslash( $_POST['qr_bg_color'] ) ) : null, array( 255, 255, 255 ) );
-		$size = isset( $_POST['qr_size'] ) ? min( 1200, max( 100, intval( wp_unslash( $_POST['qr_size'] ) ) ) ) : 400;
+		$size = isset( $_POST['qr_size'] ) ? min( 1024, max( 100, intval( wp_unslash( $_POST['qr_size'] ) ) ) ) : 400;
 
 		// Prepare data based on type.
 		switch ( $type ) {
@@ -111,6 +123,12 @@ function qr_generator_shortcode() {
 			default:
 				$qr_content = $data;
 				break;
+		}
+
+		// A scanner opens the code as a link only when it is a full web address.
+		$url_warning = '';
+		if ( 'url' === $type && '' !== $data && ! ( preg_match( '#^https?://#i', $data ) && filter_var( $data, FILTER_VALIDATE_URL ) ) ) {
+			$url_warning = '<p class="qr-warning">' . esc_html__( 'This does not look like a web address. Phones will show it as text, not open it as a link. Start it with https://, or choose Text as the QR type.', 'qr-code-generator' ) . '</p>';
 		}
 
 		$image_uri = '';
@@ -125,7 +143,7 @@ function qr_generator_shortcode() {
 		if ( 0 === strpos( $image_uri, 'data:image/png;base64,' ) ) {
 			// The image is a data URI built above (base64 only), so it is escaped as an attribute; esc_url() would drop the data: scheme.
 			$qr_output = '
-			<div class="qr-output">
+			<div class="qr-output">' . $url_warning . '
 				<img src="' . esc_attr( $image_uri ) . '" alt="' . esc_attr__( 'Generated QR Code', 'qr-code-generator' ) . '" class="qr-preview">
 				<a href="' . esc_attr( $image_uri ) . '" download="qr-code.png" class="qr-download">' . esc_html__( 'Download QR Code', 'qr-code-generator' ) . '</a>
 			</div>';
@@ -169,7 +187,7 @@ function qr_generator_shortcode() {
 
 					<div>
 						<label for="qr_size"><?php esc_html_e( 'Size (pixels)', 'qr-code-generator' ); ?></label>
-						<input type="number" id="qr_size" name="qr_size" min="100" max="1200" value="400">
+						<input type="number" id="qr_size" name="qr_size" min="100" max="1024" value="400">
 					</div>
 
 					<input type="submit" name="generate_qr" value="<?php esc_attr_e( 'Generate QR Code', 'qr-code-generator' ); ?>">

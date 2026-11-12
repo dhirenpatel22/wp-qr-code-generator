@@ -7,7 +7,8 @@ It runs the [QR code generator on dhirenpatel.me](https://www.dhirenpatel.me/too
 ## What it does
 
 - QR codes for a URL, plain text or a vCard with a contact name.
-- Foreground and background colours, and a size from 100 to 1200 pixels (the image is capped at 1024 pixels).
+- Foreground and background colours, and a size from 100 to 1024 pixels. The PNG is exactly the size chosen: the code uses whole pixels per module and any remainder becomes background around it.
+- With the URL type, text that is not a full `http://` or `https://` address still makes a code, with a warning that phones will not open it as a link.
 - A preview and a download button. After a submit, focus moves to the result so keyboard and screen-reader users land on it.
 - Form submissions are protected with a WordPress nonce, and all input is sanitised.
 
@@ -50,6 +51,7 @@ The plugin is GPL-2.0-or-later. See [LICENSE](LICENSE).
 
 ## Changelog
 
+- **2.0.2**: the size field and the server limit are 1024 pixels, matching the stated maximum, and the PNG is exactly the size requested (400 gives 400 pixels); the URL type warns when the text is not a web address.
 - **2.0**: replaced the unmaintained PHP QR Code 1.1.4 library with chillerlan/php-qrcode 6.0.1; QR codes are generated in memory instead of saved to a public folder; size is checked on the server; licence is now GPL-2.0-or-later; requires PHP 8.2.
 - **1.4**: version running on dhirenpatel.me when this repository was created.
 

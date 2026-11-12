@@ -164,6 +164,12 @@
 	text-align: center;
 }
 
+.qr-warning {
+	color: #8a4b00;
+	font-weight: bold;
+	margin: 0 0 12px;
+}
+
 /* Attribution link styling */
 .qr-attribution {
 	margin-top: 15px;
